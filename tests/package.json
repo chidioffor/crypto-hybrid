@@ -1,0 +1,33 @@
+{
+  "name": "cryptohybrid-bank-tests",
+  "version": "1.0.0",
+  "description": "Integration and end-to-end tests for CryptoHybrid Bank",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha --recursive --timeout 30000",
+    "test:integration": "mocha integration/*.test.js --timeout 30000",
+    "test:e2e": "mocha e2e/*.test.js --timeout 60000",
+    "test:watch": "mocha --recursive --timeout 30000 --watch",
+    "test:coverage": "nyc mocha --recursive --timeout 30000"
+  },
+  "keywords": [
+    "testing",
+    "integration",
+    "e2e",
+    "fintech",
+    "crypto",
+    "banking"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "chai": "^4.3.10",
+    "mocha": "^10.2.0",
+    "supertest": "^6.3.3",
+    "axios": "^1.6.2",
+    "puppeteer": "^21.5.2"
+  },
+  "devDependencies": {
+    "nyc": "^15.1.0"
+  }
+}

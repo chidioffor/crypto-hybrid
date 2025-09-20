@@ -1,0 +1,178 @@
+version: '3.8'
+
+services:
+  # Database Services
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: cryptohybridbank
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: secure_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - cryptohybrid-network
+
+  mongodb:
+    image: mongo:7
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: secure_password
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - cryptohybrid-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - cryptohybrid-network
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://admin:secure_password@postgres:5432/cryptohybridbank
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=your_jwt_secret_key
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - cryptohybrid-network
+
+  # User Service
+  user-service:
+    build:
+      context: ./services/user-service
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://admin:secure_password@postgres:5432/cryptohybridbank
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=your_jwt_secret_key
+      - PLAID_CLIENT_ID=your_plaid_client_id
+      - PLAID_SECRET=your_plaid_secret
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - cryptohybrid-network
+
+  # Wallet Service
+  wallet-service:
+    build:
+      context: ./services/wallet-service
+      dockerfile: Dockerfile
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://admin:secure_password@postgres:5432/cryptohybridbank
+      - REDIS_URL=redis://redis:6379
+      - FIREBLOCKS_API_KEY=your_fireblocks_api_key
+      - FIREBLOCKS_SECRET_KEY=your_fireblocks_secret_key
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - cryptohybrid-network
+
+  # Payment Service
+  payment-service:
+    build:
+      context: ./services/payment-service
+      dockerfile: Dockerfile
+    ports:
+      - "3003:3003"
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://admin:secure_password@postgres:5432/cryptohybridbank
+      - REDIS_URL=redis://redis:6379
+      - STRIPE_SECRET_KEY=your_stripe_secret_key
+      - CHAINALYSIS_API_KEY=your_chainalysis_api_key
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - cryptohybrid-network
+
+  # Card Service
+  card-service:
+    build:
+      context: ./services/card-service
+      dockerfile: Dockerfile
+    ports:
+      - "3004:3004"
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://admin:secure_password@postgres:5432/cryptohybridbank
+      - REDIS_URL=redis://redis:6379
+      - COLUMN_API_KEY=your_column_api_key
+      - MARQETA_API_KEY=your_marqeta_api_key
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - cryptohybrid-network
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3005:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:3000
+    depends_on:
+      - api-gateway
+    networks:
+      - cryptohybrid-network
+
+  # Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - cryptohybrid-network
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3006:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - cryptohybrid-network
+
+volumes:
+  postgres_data:
+  mongodb_data:
+  redis_data:
+  grafana_data:
+
+networks:
+  cryptohybrid-network:
+    driver: bridge
