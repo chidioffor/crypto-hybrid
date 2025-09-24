@@ -18,6 +18,7 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3002;
+const ENCRYPTION_VERSION = 1;
 
 // Logger configuration
 const logger = winston.createLogger({
@@ -34,6 +35,64 @@ const logger = winston.createLogger({
   ]
 });
 
+const REQUIRED_ENV_VARS = ['DATABASE_URL', 'REDIS_URL', 'JWT_SECRET', 'WALLET_ENCRYPTION_KEY'];
+const missingEnvVars = REQUIRED_ENV_VARS.filter(name => !process.env[name]);
+
+if (missingEnvVars.length > 0) {
+  logger.error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
+  process.exit(1);
+}
+
+const deriveEncryptionKey = (rawValue, label) => {
+  const value = rawValue.trim();
+
+  if (!value) {
+    throw new Error(`${label} cannot be empty`);
+  }
+
+  try {
+    const base64Buffer = Buffer.from(value, 'base64');
+    if (base64Buffer.length === 32) {
+      return base64Buffer;
+    }
+  } catch (error) {
+    logger.debug(`${label} is not valid base64: ${error.message}`);
+  }
+
+  if (/^[0-9a-fA-F]{64}$/.test(value)) {
+    return Buffer.from(value, 'hex');
+  }
+
+  throw new Error(`${label} must be a 32-byte key encoded in base64 or 64 hex characters`);
+};
+
+let walletEncryptionKey;
+
+try {
+  walletEncryptionKey = deriveEncryptionKey(process.env.WALLET_ENCRYPTION_KEY, 'WALLET_ENCRYPTION_KEY');
+} catch (error) {
+  logger.error(`Failed to initialise wallet encryption key: ${error.message}`);
+  process.exit(1);
+}
+
+const encryptSensitiveValue = (plaintext) => {
+  if (!plaintext) {
+    return null;
+  }
+
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', walletEncryptionKey, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+
+  return JSON.stringify({
+    v: ENCRYPTION_VERSION,
+    iv: iv.toString('base64'),
+    data: encrypted.toString('base64'),
+    tag: authTag.toString('base64')
+  });
+};
+
 // Database connection
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -46,7 +105,15 @@ const redisClient = redis.createClient({
 });
 
 redisClient.on('error', (err) => logger.error('Redis Client Error:', err));
-redisClient.connect();
+
+(async () => {
+  try {
+    await redisClient.connect();
+  } catch (error) {
+    logger.error('Failed to connect to Redis:', error);
+    process.exit(1);
+  }
+})();
 
 // Blockchain providers
 const providers = {
@@ -239,7 +306,7 @@ app.post('/wallets', authenticateToken, [
 
     let walletData;
     let encryptedPrivateKey = null;
-    let seedPhraseHash = null;
+    let encryptedSeedPhrase = null;
 
     if (type === 'custodial') {
       // Generate random wallet for custodial
@@ -248,29 +315,27 @@ app.post('/wallets', authenticateToken, [
         address: randomWallet.address,
         privateKey: randomWallet.privateKey
       };
-      
-      // Encrypt private key (in production, use proper encryption)
-      encryptedPrivateKey = crypto.createHash('sha256').update(randomWallet.privateKey).digest('hex');
+
+      encryptedPrivateKey = encryptSensitiveValue(randomWallet.privateKey);
     } else {
       // Generate mnemonic for non-custodial
       const mnemonic = WalletManager.generateMnemonic();
       const wallet = await WalletManager.createWalletFromMnemonic(mnemonic);
-      
+
       walletData = {
         address: wallet.address,
         mnemonic: mnemonic
       };
-      
-      // Hash mnemonic (in production, use proper hashing)
-      seedPhraseHash = crypto.createHash('sha256').update(mnemonic).digest('hex');
+
+      encryptedSeedPhrase = encryptSensitiveValue(mnemonic);
     }
 
     // Save wallet to database
     const result = await pool.query(
-      `INSERT INTO wallets (user_id, wallet_type, wallet_address, encrypted_private_key, seed_phrase_hash, is_active, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+      `INSERT INTO wallets (user_id, wallet_type, wallet_address, encrypted_private_key, encrypted_seed_phrase, is_active, created_at, updated_at, encryption_version)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW(), $7)
        RETURNING id, wallet_type, wallet_address, is_active, created_at`,
-      [req.user.userId, type, walletData.address, encryptedPrivateKey, seedPhraseHash, true]
+      [req.user.userId, type, walletData.address, encryptedPrivateKey, encryptedSeedPhrase, true, ENCRYPTION_VERSION]
     );
 
     const wallet = result.rows[0];

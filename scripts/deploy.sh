@@ -70,11 +70,19 @@ generate_env_files() {
     
     # Generate JWT secret
     JWT_SECRET=$(openssl rand -hex 64)
-    
+
     # Generate database passwords
     DB_PASSWORD=$(openssl rand -hex 16)
     MONGO_PASSWORD=$(openssl rand -hex 16)
-    
+    REDIS_PASSWORD=$(openssl rand -hex 16)
+
+    # Generate encryption keys
+    WALLET_ENCRYPTION_KEY=$(openssl rand -base64 32)
+    CARD_DATA_ENCRYPTION_KEY=$(openssl rand -base64 32)
+
+    # Generate monitoring password
+    GRAFANA_ADMIN_PASSWORD=$(openssl rand -base64 18 | tr -d '=+/')
+
     # Create .env file
     cat > .env << EOF
 # Environment
@@ -87,21 +95,29 @@ POSTGRES_PORT=5432
 POSTGRES_DB=cryptohybridbank
 POSTGRES_USER=admin
 POSTGRES_PASSWORD=${DB_PASSWORD}
+DATABASE_URL=postgresql://admin:${DB_PASSWORD}@postgres:5432/cryptohybridbank
 
 MONGODB_HOST=mongodb
 MONGODB_PORT=27017
 MONGODB_DB=cryptohybridbank
 MONGODB_USER=admin
 MONGODB_PASSWORD=${MONGO_PASSWORD}
+MONGODB_URI=mongodb://admin:${MONGO_PASSWORD}@mongodb:27017/cryptohybridbank?authSource=admin
 
 REDIS_HOST=redis
 REDIS_PORT=6379
-REDIS_PASSWORD=
+REDIS_PASSWORD=${REDIS_PASSWORD}
+REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+CARD_PROVISION_TOKEN_TTL=300
 
 # JWT Configuration
 JWT_SECRET=${JWT_SECRET}
 JWT_EXPIRES_IN=1h
 REFRESH_TOKEN_EXPIRES_IN=7d
+
+# Encryption Configuration
+WALLET_ENCRYPTION_KEY=${WALLET_ENCRYPTION_KEY}
+CARD_DATA_ENCRYPTION_KEY=${CARD_DATA_ENCRYPTION_KEY}
 
 # API Configuration
 API_GATEWAY_URL=http://api-gateway:3000
@@ -136,7 +152,7 @@ BSC_RPC_URL=https://bsc-dataseed.binance.org/
 PRIVATE_KEY=your_deployment_private_key
 
 # Monitoring
-GRAFANA_ADMIN_PASSWORD=admin123
+GRAFANA_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
 
 # Security
 ALLOWED_ORIGINS=http://localhost:3005,https://your-domain.com

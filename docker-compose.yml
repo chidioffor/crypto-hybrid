@@ -1,13 +1,19 @@
 version: '3.8'
 
+x-service-defaults: &service-defaults
+  env_file:
+    - .env
+  networks:
+    - cryptohybrid-network
+
 services:
   # Database Services
   postgres:
     image: postgres:15
     environment:
-      POSTGRES_DB: cryptohybridbank
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: secure_password
+      POSTGRES_DB: ${POSTGRES_DB:-cryptohybridbank}
+      POSTGRES_USER: ${POSTGRES_USER:-cryptohybrid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
     ports:
       - "5432:5432"
     volumes:
@@ -19,8 +25,9 @@ services:
   mongodb:
     image: mongo:7
     environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: secure_password
+      MONGO_INITDB_ROOT_USERNAME: ${MONGODB_USER:-cryptohybrid}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_PASSWORD:-change-me}
+      MONGO_INITDB_DATABASE: ${MONGODB_DB:-cryptohybrid}
     ports:
       - "27017:27017"
     volumes:
@@ -30,6 +37,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-change-me}"]
     ports:
       - "6379:6379"
     volumes:
@@ -39,112 +47,121 @@ services:
 
   # API Gateway
   api-gateway:
+    <<: *service-defaults
     build:
       context: ./services/api-gateway
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
     environment:
-      - NODE_ENV=development
-      - DATABASE_URL=postgresql://admin:secure_password@postgres:5432/cryptohybridbank
-      - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=your_jwt_secret_key
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-cryptohybrid}:${POSTGRES_PASSWORD:-change-me}@postgres:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-cryptohybridbank}}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me}@redis:${REDIS_PORT:-6379}/0}
+      JWT_SECRET: ${JWT_SECRET:-change-me}
+      USER_SERVICE_URL: ${USER_SERVICE_URL:-http://user-service:3001}
+      WALLET_SERVICE_URL: ${WALLET_SERVICE_URL:-http://wallet-service:3002}
+      PAYMENT_SERVICE_URL: ${PAYMENT_SERVICE_URL:-http://payment-service:3003}
+      CARD_SERVICE_URL: ${CARD_SERVICE_URL:-http://card-service:3004}
     depends_on:
       - postgres
       - redis
-    networks:
-      - cryptohybrid-network
 
   # User Service
   user-service:
+    <<: *service-defaults
     build:
       context: ./services/user-service
       dockerfile: Dockerfile
     ports:
       - "3001:3001"
     environment:
-      - NODE_ENV=development
-      - DATABASE_URL=postgresql://admin:secure_password@postgres:5432/cryptohybridbank
-      - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=your_jwt_secret_key
-      - PLAID_CLIENT_ID=your_plaid_client_id
-      - PLAID_SECRET=your_plaid_secret
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-cryptohybrid}:${POSTGRES_PASSWORD:-change-me}@postgres:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-cryptohybridbank}}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me}@redis:${REDIS_PORT:-6379}/0}
+      JWT_SECRET: ${JWT_SECRET:-change-me}
+      PLAID_CLIENT_ID: ${PLAID_CLIENT_ID:-}
+      PLAID_SECRET: ${PLAID_SECRET:-}
+      PLAID_ENV: ${PLAID_ENV:-sandbox}
     depends_on:
       - postgres
       - redis
-    networks:
-      - cryptohybrid-network
 
   # Wallet Service
   wallet-service:
+    <<: *service-defaults
     build:
       context: ./services/wallet-service
       dockerfile: Dockerfile
     ports:
       - "3002:3002"
     environment:
-      - NODE_ENV=development
-      - DATABASE_URL=postgresql://admin:secure_password@postgres:5432/cryptohybridbank
-      - REDIS_URL=redis://redis:6379
-      - FIREBLOCKS_API_KEY=your_fireblocks_api_key
-      - FIREBLOCKS_SECRET_KEY=your_fireblocks_secret_key
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-cryptohybrid}:${POSTGRES_PASSWORD:-change-me}@postgres:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-cryptohybridbank}}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me}@redis:${REDIS_PORT:-6379}/0}
+      JWT_SECRET: ${JWT_SECRET:-change-me}
+      WALLET_ENCRYPTION_KEY: ${WALLET_ENCRYPTION_KEY:-}
+      FIREBLOCKS_API_KEY: ${FIREBLOCKS_API_KEY:-}
+      FIREBLOCKS_SECRET_KEY: ${FIREBLOCKS_SECRET_KEY:-}
+      ETHEREUM_RPC_URL: ${ETHEREUM_RPC_URL:-}
+      POLYGON_RPC_URL: ${POLYGON_RPC_URL:-}
+      BSC_RPC_URL: ${BSC_RPC_URL:-}
     depends_on:
       - postgres
       - redis
-    networks:
-      - cryptohybrid-network
 
   # Payment Service
   payment-service:
+    <<: *service-defaults
     build:
       context: ./services/payment-service
       dockerfile: Dockerfile
     ports:
       - "3003:3003"
     environment:
-      - NODE_ENV=development
-      - DATABASE_URL=postgresql://admin:secure_password@postgres:5432/cryptohybridbank
-      - REDIS_URL=redis://redis:6379
-      - STRIPE_SECRET_KEY=your_stripe_secret_key
-      - CHAINALYSIS_API_KEY=your_chainalysis_api_key
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-cryptohybrid}:${POSTGRES_PASSWORD:-change-me}@postgres:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-cryptohybridbank}}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me}@redis:${REDIS_PORT:-6379}/0}
+      JWT_SECRET: ${JWT_SECRET:-change-me}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      CHAINALYSIS_API_KEY: ${CHAINALYSIS_API_KEY:-}
     depends_on:
       - postgres
       - redis
-    networks:
-      - cryptohybrid-network
 
   # Card Service
   card-service:
+    <<: *service-defaults
     build:
       context: ./services/card-service
       dockerfile: Dockerfile
     ports:
       - "3004:3004"
     environment:
-      - NODE_ENV=development
-      - DATABASE_URL=postgresql://admin:secure_password@postgres:5432/cryptohybridbank
-      - REDIS_URL=redis://redis:6379
-      - COLUMN_API_KEY=your_column_api_key
-      - MARQETA_API_KEY=your_marqeta_api_key
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-cryptohybrid}:${POSTGRES_PASSWORD:-change-me}@postgres:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-cryptohybridbank}}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me}@redis:${REDIS_PORT:-6379}/0}
+      JWT_SECRET: ${JWT_SECRET:-change-me}
+      CARD_DATA_ENCRYPTION_KEY: ${CARD_DATA_ENCRYPTION_KEY:-}
+      CARD_PROVISION_TOKEN_TTL: ${CARD_PROVISION_TOKEN_TTL:-300}
+      COLUMN_API_KEY: ${COLUMN_API_KEY:-}
+      MARQETA_API_KEY: ${MARQETA_API_KEY:-}
     depends_on:
       - postgres
       - redis
-    networks:
-      - cryptohybrid-network
 
   # Frontend
   frontend:
+    <<: *service-defaults
     build:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
       - "3005:3000"
     environment:
-      - REACT_APP_API_URL=http://localhost:3000
+      REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:3000}
     depends_on:
       - api-gateway
-    networks:
-      - cryptohybrid-network
 
   # Monitoring
   prometheus:
@@ -161,7 +178,7 @@ services:
     ports:
       - "3006:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change-me}
     volumes:
       - grafana_data:/var/lib/grafana
     networks:

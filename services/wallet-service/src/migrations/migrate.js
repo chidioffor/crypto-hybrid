@@ -16,7 +16,9 @@ const migrations = [
         wallet_type VARCHAR(20) NOT NULL,
         wallet_address VARCHAR(255),
         encrypted_private_key TEXT,
+        encrypted_seed_phrase TEXT,
         seed_phrase_hash VARCHAR(255),
+        encryption_version INTEGER DEFAULT 1,
         is_active BOOLEAN DEFAULT true,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -25,6 +27,16 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_wallets_user_id ON wallets(user_id);
       CREATE INDEX IF NOT EXISTS idx_wallets_address ON wallets(wallet_address);
       CREATE INDEX IF NOT EXISTS idx_wallets_type ON wallets(wallet_type);
+    `
+  },
+  {
+    name: 'add_encrypted_seed_phrase_columns',
+    sql: `
+      ALTER TABLE wallets
+      ADD COLUMN IF NOT EXISTS encrypted_seed_phrase TEXT;
+
+      ALTER TABLE wallets
+      ADD COLUMN IF NOT EXISTS encryption_version INTEGER DEFAULT 1;
     `
   },
   {
