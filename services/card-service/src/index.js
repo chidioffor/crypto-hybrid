@@ -10,10 +10,13 @@ const winston = require('winston');
 const { body, validationResult } = require('express-validator');
 const axios = require('axios');
 const cron = require('node-cron');
+const crypto = require('crypto');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3004;
+const CARD_ENCRYPTION_VERSION = 1;
+const CARD_PROVISION_PREFIX = 'card:provision:';
 
 // Logger configuration
 const logger = winston.createLogger({
@@ -30,6 +33,111 @@ const logger = winston.createLogger({
   ]
 });
 
+const REQUIRED_ENV_VARS = ['DATABASE_URL', 'REDIS_URL', 'JWT_SECRET', 'CARD_DATA_ENCRYPTION_KEY'];
+const missingEnv = REQUIRED_ENV_VARS.filter(name => !process.env[name]);
+
+if (missingEnv.length > 0) {
+  logger.error(`Missing required environment variables: ${missingEnv.join(', ')}`);
+  process.exit(1);
+}
+
+const deriveEncryptionKey = (rawValue, label) => {
+  const value = rawValue.trim();
+
+  if (!value) {
+    throw new Error(`${label} cannot be empty`);
+  }
+
+  try {
+    const buffer = Buffer.from(value, 'base64');
+    if (buffer.length === 32) {
+      return buffer;
+    }
+  } catch (error) {
+    logger.debug(`${label} is not valid base64: ${error.message}`);
+  }
+
+  if (/^[0-9a-fA-F]{64}$/.test(value)) {
+    return Buffer.from(value, 'hex');
+  }
+
+  throw new Error(`${label} must be a 32-byte key encoded in base64 or 64 hex characters`);
+};
+
+let cardEncryptionKey;
+
+try {
+  cardEncryptionKey = deriveEncryptionKey(process.env.CARD_DATA_ENCRYPTION_KEY, 'CARD_DATA_ENCRYPTION_KEY');
+} catch (error) {
+  logger.error(`Failed to initialise card encryption key: ${error.message}`);
+  process.exit(1);
+}
+
+const cardHashKey = crypto.createHash('sha256').update(cardEncryptionKey).digest();
+
+const parseProvisionTtl = Number.parseInt(process.env.CARD_PROVISION_TOKEN_TTL || '300', 10);
+const CARD_PROVISION_TOKEN_TTL = Number.isNaN(parseProvisionTtl) || parseProvisionTtl <= 0 ? 300 : parseProvisionTtl;
+
+const encryptCardPayload = (plaintext) => {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', cardEncryptionKey, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+
+  return JSON.stringify({
+    v: CARD_ENCRYPTION_VERSION,
+    iv: iv.toString('base64'),
+    data: encrypted.toString('base64'),
+    tag: authTag.toString('base64')
+  });
+};
+
+const decryptCardPayload = (payload) => {
+  const parsed = JSON.parse(payload);
+
+  if (parsed.v !== CARD_ENCRYPTION_VERSION || !parsed.iv || !parsed.data || !parsed.tag) {
+    throw new Error('Invalid encrypted payload');
+  }
+
+  const iv = Buffer.from(parsed.iv, 'base64');
+  const ciphertext = Buffer.from(parsed.data, 'base64');
+  const authTag = Buffer.from(parsed.tag, 'base64');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', cardEncryptionKey, iv);
+  decipher.setAuthTag(authTag);
+
+  const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  return JSON.parse(decrypted.toString('utf8'));
+};
+
+const maskCardNumber = (cardNumber) => {
+  const sanitized = cardNumber.replace(/\D/g, '');
+  const last4 = sanitized.slice(-4);
+  return { masked: `**** **** **** ${last4}`, last4 };
+};
+
+const calculateCardFingerprint = (cardNumber) =>
+  crypto.createHmac('sha256', cardHashKey).update(cardNumber).digest('hex');
+
+const createProvisioningRecord = async (userId, cardId, details) => {
+  const token = crypto.randomBytes(32).toString('hex');
+  const redisKey = `${CARD_PROVISION_PREFIX}${token}`;
+  const payload = encryptCardPayload(JSON.stringify({ userId, cardId, details }));
+
+  const storeResult = await redisClient.set(redisKey, payload, {
+    EX: CARD_PROVISION_TOKEN_TTL,
+    NX: true
+  });
+
+  if (storeResult !== 'OK') {
+    throw new Error('Provisioning token collision detected');
+  }
+
+  return {
+    token,
+    expiresAt: new Date(Date.now() + CARD_PROVISION_TOKEN_TTL * 1000).toISOString()
+  };
+};
+
 // Database connection
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -42,7 +150,15 @@ const redisClient = redis.createClient({
 });
 
 redisClient.on('error', (err) => logger.error('Redis Client Error:', err));
-redisClient.connect();
+
+(async () => {
+  try {
+    await redisClient.connect();
+  } catch (error) {
+    logger.error('Failed to connect to Redis:', error);
+    process.exit(1);
+  }
+})();
 
 // JWT Authentication Middleware
 const authenticateToken = async (req, res, next) => {
@@ -90,11 +206,14 @@ class CardManager {
     try {
       // In production, this would integrate with Column API or Marqeta API
       // For demo purposes, we'll simulate card creation
+      const expiryDate = new Date();
+      expiryDate.setMonth(expiryDate.getMonth() + 12);
+
       const card = {
         id: `card_${Date.now()}`,
         cardNumber: this.generateCardNumber(),
-        expiryMonth: new Date().getMonth() + 1 + 12, // 1 year from now
-        expiryYear: new Date().getFullYear() + 1,
+        expiryMonth: expiryDate.getMonth() + 1,
+        expiryYear: expiryDate.getFullYear(),
         cvv: Math.floor(100 + Math.random() * 900).toString(),
         type: cardData.cardType,
         network: cardData.network || 'visa',
@@ -115,11 +234,14 @@ class CardManager {
   static async createPhysicalCard(userId, cardData) {
     try {
       // In production, this would integrate with card issuing APIs
+      const expiryDate = new Date();
+      expiryDate.setMonth(expiryDate.getMonth() + 12);
+
       const card = {
         id: `card_${Date.now()}`,
         cardNumber: this.generateCardNumber(),
-        expiryMonth: new Date().getMonth() + 1 + 12,
-        expiryYear: new Date().getFullYear() + 1,
+        expiryMonth: expiryDate.getMonth() + 1,
+        expiryYear: expiryDate.getFullYear(),
         cvv: Math.floor(100 + Math.random() * 900).toString(),
         type: 'physical',
         network: cardData.network || 'visa',
@@ -313,14 +435,15 @@ app.post('/cards/apply', authenticateToken, [
       });
     }
 
-    // Save card to database
+    const cardFingerprint = calculateCardFingerprint(card.cardNumber);
+
     const result = await pool.query(
       `INSERT INTO cards (user_id, card_number_hash, card_type, card_network, status, daily_limit, monthly_limit, currency, created_at, expires_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9)
        RETURNING id, card_type, card_network, status, daily_limit, monthly_limit, currency, created_at, expires_at`,
       [
         req.user.userId,
-        require('crypto').createHash('sha256').update(card.cardNumber).digest('hex'),
+        cardFingerprint,
         card.type,
         card.network,
         card.status,
@@ -332,6 +455,25 @@ app.post('/cards/apply', authenticateToken, [
     );
 
     const savedCard = result.rows[0];
+    const mask = maskCardNumber(card.cardNumber);
+
+    let provisioningRecord = null;
+    if (cardType === 'virtual') {
+      try {
+        provisioningRecord = await createProvisioningRecord(req.user.userId, savedCard.id, {
+          cardNumber: card.cardNumber,
+          expiryMonth: card.expiryMonth,
+          expiryYear: card.expiryYear,
+          cvv: card.cvv
+        });
+      } catch (cacheError) {
+        logger.error('Failed to provision secure card payload:', cacheError);
+        return res.status(500).json({
+          success: false,
+          error: { code: 'CARD_PROVISIONING_FAILED', message: 'Failed to provision secure card details' }
+        });
+      }
+    }
 
     logger.info(`New ${cardType} card created for user ${req.user.userId}: ${savedCard.id}`);
 
@@ -347,14 +489,15 @@ app.post('/cards/apply', authenticateToken, [
           monthlyLimit: parseFloat(savedCard.monthly_limit),
           currency: savedCard.currency,
           createdAt: savedCard.created_at,
-          expiresAt: savedCard.expires_at
+          expiresAt: savedCard.expires_at,
+          ...(cardType === 'virtual' && { last4: mask.last4 })
         },
-        ...(cardType === 'virtual' && {
-          cardDetails: {
-            cardNumber: card.cardNumber,
-            expiryMonth: card.expiryMonth,
-            expiryYear: card.expiryYear,
-            cvv: card.cvv
+        ...(cardType === 'virtual' && provisioningRecord && {
+          cardProvisioning: {
+            token: provisioningRecord.token,
+            expiresAt: provisioningRecord.expiresAt,
+            maskedCardNumber: mask.masked,
+            last4: mask.last4
           }
         }),
         ...(cardType === 'physical' && {
@@ -469,6 +612,60 @@ app.put('/cards/:cardId/controls', authenticateToken, [
     res.status(500).json({
       success: false,
       error: { code: 'CARD_CONTROLS_UPDATE_FAILED', message: 'Failed to update card controls' }
+    });
+  }
+});
+
+// Retrieve provisioned card details (single-use)
+app.post('/cards/provision', authenticateToken, [
+  body('token').isString().isLength({ min: 40 })
+], validateRequest, async (req, res) => {
+  try {
+    const { token } = req.body;
+    const redisKey = `${CARD_PROVISION_PREFIX}${token}`;
+    const encryptedPayload = await redisClient.get(redisKey);
+
+    if (!encryptedPayload) {
+      return res.status(410).json({
+        success: false,
+        error: { code: 'PROVISIONING_TOKEN_EXPIRED', message: 'Provisioning token is invalid or has expired' }
+      });
+    }
+
+    let payload;
+    try {
+      payload = decryptCardPayload(encryptedPayload);
+    } catch (error) {
+      logger.error('Failed to decrypt provisioning payload:', error);
+      await redisClient.del(redisKey);
+      return res.status(500).json({
+        success: false,
+        error: { code: 'PROVISIONING_DECRYPTION_FAILED', message: 'Unable to decrypt provisioning payload' }
+      });
+    }
+
+    if (payload.userId !== req.user.userId) {
+      await redisClient.del(redisKey);
+      return res.status(403).json({
+        success: false,
+        error: { code: 'PROVISIONING_UNAUTHORIZED', message: 'Provisioning token does not belong to this user' }
+      });
+    }
+
+    await redisClient.del(redisKey);
+
+    res.json({
+      success: true,
+      data: {
+        cardId: payload.cardId,
+        cardDetails: payload.details
+      }
+    });
+  } catch (error) {
+    logger.error('Card provisioning retrieval failed:', error);
+    res.status(500).json({
+      success: false,
+      error: { code: 'CARD_PROVISIONING_FAILED', message: 'Failed to retrieve card details' }
     });
   }
 });

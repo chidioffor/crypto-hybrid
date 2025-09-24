@@ -48,14 +48,16 @@ CREATE TABLE IF NOT EXISTS assets (
 CREATE TABLE IF NOT EXISTS wallets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    address VARCHAR(255) NOT NULL,
-    type VARCHAR(20) NOT NULL CHECK (type IN ('custodial', 'non-custodial')),
+    wallet_type VARCHAR(20) NOT NULL CHECK (wallet_type IN ('custodial', 'non_custodial')),
+    wallet_address VARCHAR(255) NOT NULL,
     chain_id INTEGER,
     encrypted_private_key TEXT,
+    encrypted_seed_phrase TEXT,
+    encryption_version INTEGER DEFAULT 1,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    UNIQUE(user_id, address, chain_id)
+    UNIQUE(user_id, wallet_address, chain_id)
 );
 
 -- Balances table (User asset balances)
@@ -111,21 +113,19 @@ CREATE TABLE IF NOT EXISTS transactions (
 CREATE TABLE IF NOT EXISTS cards (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    card_number VARCHAR(19) UNIQUE NOT NULL,
-    cardholder_name VARCHAR(255) NOT NULL,
-    expiry_month INTEGER NOT NULL CHECK (expiry_month BETWEEN 1 AND 12),
-    expiry_year INTEGER NOT NULL,
-    cvv VARCHAR(4) NOT NULL,
-    type VARCHAR(20) NOT NULL CHECK (type IN ('virtual', 'physical')),
+    card_number_hash VARCHAR(255) NOT NULL,
+    card_type VARCHAR(20) NOT NULL CHECK (card_type IN ('virtual', 'physical')),
+    card_network VARCHAR(20) NOT NULL,
     status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'blocked', 'expired')),
-    spending_limit DECIMAL(15, 2) DEFAULT 10000,
     daily_limit DECIMAL(15, 2) DEFAULT 1000,
     monthly_limit DECIMAL(15, 2) DEFAULT 10000,
-    linked_wallet_id UUID REFERENCES wallets(id),
+    currency VARCHAR(3) NOT NULL DEFAULT 'USD',
+    expires_at TIMESTAMP WITH TIME ZONE,
     provider VARCHAR(100),
     provider_card_id VARCHAR(255),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(card_number_hash)
 );
 
 -- Loans table (Crypto-collateralized loans)
