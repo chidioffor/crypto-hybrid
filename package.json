@@ -4,19 +4,23 @@
   "description": "CryptoHybrid Bank - Comprehensive crypto-fiat banking platform",
   "main": "index.js",
   "scripts": {
-    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
-    "dev:frontend": "cd frontend && npm run dev",
-    "dev:backend": "cd backend && npm run dev",
-    "build": "npm run build:frontend && npm run build:backend",
-    "build:frontend": "cd frontend && npm run build",
-    "build:backend": "cd backend && npm run build",
-    "test": "npm run test:frontend && npm run test:backend",
-    "test:frontend": "cd frontend && npm test",
-    "test:backend": "cd backend && npm test",
+    "dev": "npm run dev:services",
+    "dev:services": "concurrently \"npm run dev --prefix services/api-gateway\" \"npm run dev --prefix services/user-service\" \"npm run dev --prefix services/wallet-service\" \"npm run dev --prefix services/payment-service\" \"npm run dev --prefix services/card-service\"",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev:mock-backend": "npm run dev --prefix mock-backend",
+    "build": "npm run build:frontend && npm run build:services",
+    "build:frontend": "npm run build --prefix frontend",
+    "build:services": "npm run build --prefix services/api-gateway && npm run build --prefix services/user-service && npm run build --prefix services/wallet-service && npm run build --prefix services/payment-service && npm run build --prefix services/card-service",
+    "test": "npm run test:services && npm run test:frontend",
+    "test:services": "npm run test --prefix services/api-gateway --if-present && npm run test --prefix services/user-service --if-present && npm run test --prefix services/wallet-service --if-present && npm run test --prefix services/payment-service --if-present && npm run test --prefix services/card-service --if-present",
+    "test:frontend": "npm test --prefix frontend",
     "docker:build": "docker-compose build",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
-    "setup": "npm install && cd frontend && npm install && cd ../backend && npm install"
+    "setup": "npm install && npm install --prefix frontend && npm install --prefix services/api-gateway && npm install --prefix services/user-service && npm install --prefix services/wallet-service && npm install --prefix services/payment-service && npm install --prefix services/card-service && npm install --prefix mock-backend",
+    "db:migrate": "node scripts/run-migrations.js",
+    "db:seed": "node scripts/seed-test-data.js",
+    "ci": "npm run db:migrate && npm test"
   },
   "keywords": [
     "crypto",
@@ -27,6 +31,10 @@
   ],
   "author": "CryptoHybrid Bank Team",
   "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "pg": "^8.11.3"
+  },
   "devDependencies": {
     "concurrently": "^8.2.2"
   }

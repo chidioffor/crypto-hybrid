@@ -8,9 +8,11 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
 const jwt = require('jsonwebtoken');
 const winston = require('winston');
 require('dotenv').config();
+const promClient = require('../../shared/metrics');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const metricsEnabled = process.env.ENABLE_PROMETHEUS_METRICS !== 'false';
 
 // Logger configuration
 const logger = winston.createLogger({
@@ -26,6 +28,42 @@ const logger = winston.createLogger({
     new winston.transports.File({ filename: 'logs/combined.log' })
   ]
 });
+
+let register;
+let httpRequestDuration;
+
+if (metricsEnabled) {
+  register = new promClient.Registry();
+  promClient.collectDefaultMetrics({ register, prefix: 'api_gateway_' });
+  httpRequestDuration = new promClient.Histogram({
+    name: 'api_gateway_request_duration_seconds',
+    help: 'Duration of HTTP requests in seconds',
+    labelNames: ['method', 'route', 'status'],
+    buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.3, 0.5, 1, 2, 5],
+    registers: [register]
+  });
+
+  app.use((req, res, next) => {
+    const end = httpRequestDuration.startTimer();
+    res.on('finish', () => {
+      const route = req.route?.path || req.originalUrl || 'unknown';
+      end({ method: req.method, route, status: res.statusCode });
+    });
+    next();
+  });
+
+  app.get('/metrics', async (req, res) => {
+    res.set('Content-Type', register.contentType);
+    res.end(await register.metrics());
+  });
+} else {
+  app.get('/metrics', (req, res) => {
+    res.status(503).json({
+      success: false,
+      error: { code: 'METRICS_DISABLED', message: 'Prometheus metrics are disabled' }
+    });
+  });
+}
 
 // Middleware
 app.use(helmet());

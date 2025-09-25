@@ -12,10 +12,12 @@ const { body, validationResult } = require('express-validator');
 const multer = require('multer');
 const speakeasy = require('speakeasy');
 const QRCode = require('qrcode');
+const promClient = require('../../shared/metrics');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const metricsEnabled = process.env.ENABLE_PROMETHEUS_METRICS !== 'false';
 
 // Logger configuration
 const logger = winston.createLogger({
@@ -53,6 +55,42 @@ app.use(compression());
 app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+let metricsRegistry;
+let httpHistogram;
+
+if (metricsEnabled) {
+  metricsRegistry = new promClient.Registry();
+  promClient.collectDefaultMetrics({ register: metricsRegistry, prefix: 'user_service_' });
+  httpHistogram = new promClient.Histogram({
+    name: 'user_service_request_duration_seconds',
+    help: 'Duration of HTTP requests in seconds',
+    labelNames: ['method', 'route', 'status'],
+    buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5],
+    registers: [metricsRegistry]
+  });
+
+  app.use((req, res, next) => {
+    const end = httpHistogram.startTimer();
+    res.on('finish', () => {
+      const route = req.route?.path || req.originalUrl || 'unknown';
+      end({ method: req.method, route, status: res.statusCode });
+    });
+    next();
+  });
+
+  app.get('/metrics', async (req, res) => {
+    res.set('Content-Type', metricsRegistry.contentType);
+    res.end(await metricsRegistry.metrics());
+  });
+} else {
+  app.get('/metrics', (req, res) => {
+    res.status(503).json({
+      success: false,
+      error: { code: 'METRICS_DISABLED', message: 'Prometheus metrics are disabled' }
+    });
+  });
+}
 
 // File upload configuration
 const storage = multer.memoryStorage();

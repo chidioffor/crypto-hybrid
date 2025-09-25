@@ -1,18 +1,19 @@
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000';
-
-// Validate URL construction
-const fullApiUrl = `${API_BASE_URL}/api`;
-console.log('API Base URL:', API_BASE_URL);
-console.log('Full API URL:', fullApiUrl);
+const API_MODE = (process.env.REACT_APP_API_MODE || 'live').toLowerCase();
+const LIVE_API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000';
+const MOCK_API_URL = process.env.REACT_APP_MOCK_API_URL || 'http://localhost:4000';
+const API_BASE_URL = API_MODE === 'mock' ? MOCK_API_URL : LIVE_API_URL;
+const API_PATH_PREFIX = API_MODE === 'mock' ? '' : '/api';
+const fullApiUrl = `${API_BASE_URL}${API_PATH_PREFIX}`;
 
 export const api = axios.create({
   baseURL: fullApiUrl,
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
+    'X-Client-Mode': API_MODE,
   },
 });
 
@@ -26,6 +27,10 @@ api.interceptors.request.use(
         _t: Date.now(),
       };
     }
+    config.headers = {
+      ...config.headers,
+      'X-Client-Mode': API_MODE,
+    };
     return config;
   },
   (error) => {

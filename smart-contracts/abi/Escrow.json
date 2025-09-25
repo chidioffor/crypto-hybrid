@@ -1,0 +1,38 @@
+[
+  {
+    "inputs": [
+      { "internalType": "address", "name": "_payee", "type": "address" },
+      { "internalType": "address", "name": "_arbiter", "type": "address" },
+      { "internalType": "uint256", "name": "_amount", "type": "uint256" },
+      { "internalType": "address", "name": "_token", "type": "address" },
+      { "internalType": "uint256", "name": "_deadline", "type": "uint256" },
+      { "internalType": "string", "name": "_description", "type": "string" },
+      { "internalType": "bytes32[]", "name": "_milestones", "type": "bytes32[]" }
+    ],
+    "name": "createEscrow",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "uint256", "name": "_escrowId", "type": "uint256" }],
+    "name": "fundEscrow",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "uint256", "name": "_escrowId", "type": "uint256" }],
+    "name": "releaseEscrow",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "nextEscrowId",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]

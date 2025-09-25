@@ -141,28 +141,45 @@ After successful deployment, access the application at:
 
 ### Environment Variables
 
-Key environment variables to configure:
+Key environment variables are documented in `.env.example`. Highlights include:
 
 ```bash
-# Database
+# Database & messaging
 POSTGRES_PASSWORD=your_secure_password
 MONGODB_PASSWORD=your_secure_password
+REDIS_PASSWORD=your_secure_password
+KAFKA_BROKER=kafka:9092
 
-# JWT
+# Authentication & encryption
 JWT_SECRET=your_super_secret_jwt_key
+WALLET_ENCRYPTION_KEY=base64_encoded_key
+CARD_DATA_ENCRYPTION_KEY=base64_encoded_key
 
 # External APIs
 PLAID_CLIENT_ID=your_plaid_client_id
 PLAID_SECRET=your_plaid_secret
-FIREBLOCKS_API_KEY=your_fireblocks_api_key
 STRIPE_SECRET_KEY=your_stripe_secret_key
 CHAINALYSIS_API_KEY=your_chainalysis_api_key
 
-# Blockchain
-ETHEREUM_RPC_URL=https://mainnet.infura.io/v3/your_project_id
-POLYGON_RPC_URL=https://polygon-mainnet.infura.io/v3/your_project_id
-PRIVATE_KEY=your_deployment_private_key
+# Smart-contract settlement
+ENABLE_SMART_CONTRACT_SETTLEMENT=false
+ESCROW_CONTRACT_ADDRESS=0x...
+ESCROW_ARBITER_ADDRESS=0x...
+SMART_CONTRACT_RPC_URL=https://...
+HARDHAT_DEPLOYER_MNEMONIC="word1 word2 ..."
+
+# Frontend routing
+REACT_APP_API_MODE=live   # switch to 'mock' to hit the bundled mock backend
+REACT_APP_MOCK_API_URL=http://localhost:4000
 ```
+
+### Local QA data
+
+Run `npm run db:seed` after migrations to provision a deterministic test user (`test.user@example.com / P@ssw0rd!`) with funded wallets and transactions. This keeps integration and E2E suites deterministic.
+
+### Metrics & observability
+
+Every service exposes `/metrics` (Prometheus format). Disable collection with `ENABLE_PROMETHEUS_METRICS=false` if you are not running the monitoring stack locally.
 
 ### Third-Party Integrations
 
@@ -181,17 +198,16 @@ The application integrates with numerous third-party services:
 
 ```bash
 # Start infrastructure
-docker-compose up -d postgres mongodb redis
+docker-compose up -d postgres mongodb redis kafka mock-backend
 
-# Start services in development mode
-npm run dev:user-service
-npm run dev:wallet-service
-npm run dev:payment-service
-npm run dev:card-service
-npm run dev:api-gateway
+# Start backend services (hot reload)
+npm run dev:services
 
 # Start frontend
-cd frontend && npm start
+npm run dev:frontend
+
+# Optional: run the mock API instead of the live gateway
+npm run dev:mock-backend
 ```
 
 ### Testing
@@ -201,12 +217,16 @@ cd frontend && npm start
 npm test
 
 # Run specific service tests
-npm run test:user-service
-npm run test:wallet-service
+npm run test --prefix services/user-service -- --watchAll=false --passWithNoTests
+npm run test --prefix services/wallet-service -- --watchAll=false --passWithNoTests
 
 # Run smart contract tests
 cd smart-contracts && npm test
 ```
+
+## 🧱 Infrastructure-as-Code
+
+An initial Terraform configuration lives in `infrastructure/terraform` and provisions the core managed services (Aurora PostgreSQL, MSK, ElastiCache, ACM certificates, and AWS Backup). Update `variables.tf` to match your AWS account settings and supply an IAM role ARN for backups before executing `terraform plan` or `terraform apply`.
 
 ### Smart Contract Development
 

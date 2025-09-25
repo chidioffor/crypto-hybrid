@@ -12,10 +12,19 @@ const Stripe = require('stripe');
 const axios = require('axios');
 const cron = require('node-cron');
 const { Kafka } = require('kafkajs');
+const promClient = require('../../shared/metrics');
+const { ethers } = require('../../wallet-service/node_modules/ethers');
+const path = require('path');
+const escrowAbi = require(path.join(__dirname, '../../../smart-contracts/abi/Escrow.json'));
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3003;
+const metricsEnabled = process.env.ENABLE_PROMETHEUS_METRICS !== 'false';
+const enableMockIntegrations = process.env.ENABLE_MOCK_INTEGRATIONS === 'true';
+const enableSmartContractSettlement = process.env.ENABLE_SMART_CONTRACT_SETTLEMENT === 'true';
+const chainalysisApiKey = process.env.CHAINALYSIS_API_KEY;
+const escrowArbiterAddress = process.env.ESCROW_ARBITER_ADDRESS;
 
 // Logger configuration
 const logger = winston.createLogger({
@@ -47,16 +56,84 @@ redisClient.on('error', (err) => logger.error('Redis Client Error:', err));
 redisClient.connect();
 
 // Stripe configuration
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+const stripe = !enableMockIntegrations && stripeSecretKey
+  ? new Stripe(stripeSecretKey)
+  : null;
 
 // Kafka configuration
-const kafka = new Kafka({
-  clientId: 'payment-service',
-  brokers: [process.env.KAFKA_BROKER || 'localhost:9092']
-});
+const kafkaBrokers = (process.env.KAFKA_BROKER || 'localhost:9092')
+  .split(',')
+  .map((broker) => broker.trim())
+  .filter(Boolean);
+
+const kafkaConfig = {
+  clientId: process.env.KAFKA_CLIENT_ID || 'payment-service',
+  brokers: kafkaBrokers.length ? kafkaBrokers : ['localhost:9092']
+};
+
+if (process.env.KAFKA_SASL_MECHANISM && process.env.KAFKA_SASL_USERNAME && process.env.KAFKA_SASL_PASSWORD) {
+  kafkaConfig.ssl = true;
+  kafkaConfig.sasl = {
+    mechanism: process.env.KAFKA_SASL_MECHANISM,
+    username: process.env.KAFKA_SASL_USERNAME,
+    password: process.env.KAFKA_SASL_PASSWORD
+  };
+}
+
+const kafka = new Kafka(kafkaConfig);
 
 const producer = kafka.producer();
 const consumer = kafka.consumer({ groupId: 'payment-service-group' });
+
+let escrowContract = null;
+
+if (enableSmartContractSettlement) {
+  const rpcUrl = process.env.SMART_CONTRACT_RPC_URL;
+  const contractAddress = process.env.ESCROW_CONTRACT_ADDRESS;
+  const mnemonic = process.env.HARDHAT_DEPLOYER_MNEMONIC;
+
+  if (rpcUrl && contractAddress && mnemonic && escrowArbiterAddress) {
+    try {
+      const provider = new ethers.JsonRpcProvider(rpcUrl);
+      const wallet = ethers.Wallet.fromPhrase(mnemonic).connect(provider);
+      escrowContract = new ethers.Contract(contractAddress, escrowAbi, wallet);
+      logger.info(`Smart contract settlement enabled using ${process.env.SMART_CONTRACT_NETWORK || 'unknown'} network`);
+    } catch (error) {
+      logger.warn('Failed to initialise escrow contract integration:', error);
+      escrowContract = null;
+    }
+  } else {
+    logger.warn('Smart contract settlement enabled but configuration is incomplete; skipping contract binding.');
+  }
+}
+
+const recordEscrowSettlement = async ({ payee, amount, description }) => {
+  if (!escrowContract || !ethers.isAddress(payee)) {
+    return null;
+  }
+
+  try {
+    const normalizedAmount = typeof amount === 'number' ? amount : parseFloat(amount || '0');
+    const depositAmount = ethers.parseUnits(normalizedAmount.toString(), 18);
+    const nextId = await escrowContract.nextEscrowId();
+    const tx = await escrowContract.createEscrow(
+      payee,
+      escrowArbiterAddress,
+      depositAmount,
+      ethers.ZeroAddress,
+      Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
+      description || 'Off-chain payment settlement',
+      [ethers.id('final_milestone')]
+    );
+    await tx.wait();
+
+    return { escrowId: nextId.toString(), transactionHash: tx.hash };
+  } catch (error) {
+    logger.warn('Escrow settlement registration failed:', error);
+    return null;
+  }
+};
 
 // JWT Authentication Middleware
 const authenticateToken = async (req, res, next) => {
@@ -102,8 +179,19 @@ const validateRequest = (req, res, next) => {
 class PaymentManager {
   static async createStripePaymentIntent(amount, currency, metadata = {}) {
     try {
+      if (!stripe) {
+        return {
+          id: `mock_pi_${Date.now()}`,
+          amount: Math.round(amount * 100),
+          currency: currency.toLowerCase(),
+          status: 'requires_confirmation',
+          metadata,
+          livemode: false,
+        };
+      }
+
       const paymentIntent = await stripe.paymentIntents.create({
-        amount: Math.round(amount * 100), // Convert to cents
+        amount: Math.round(amount * 100),
         currency: currency.toLowerCase(),
         metadata: metadata,
         automatic_payment_methods: {
@@ -120,6 +208,15 @@ class PaymentManager {
 
   static async confirmStripePaymentIntent(paymentIntentId) {
     try {
+      if (!stripe) {
+        return {
+          id: paymentIntentId,
+          status: 'succeeded',
+          amount_received: 0,
+          currency: 'usd',
+        };
+      }
+
       const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
       return paymentIntent;
     } catch (error) {
@@ -203,6 +300,29 @@ class TransactionMonitor {
         riskFactors.push('Crypto address destination');
       }
 
+      if (chainalysisApiKey && !enableMockIntegrations && transaction.toAddress) {
+        try {
+          const response = await axios.post(
+            'https://api.chainalysis.com/transaction/screen',
+            { address: transaction.toAddress },
+            {
+              headers: {
+                'X-API-Key': chainalysisApiKey
+              }
+            }
+          );
+
+          if (response.data?.riskScore) {
+            riskScore = Math.max(riskScore, response.data.riskScore);
+            if (response.data.riskScore >= 70) {
+              riskFactors.push('Chainalysis high-risk address');
+            }
+          }
+        } catch (chainalysisError) {
+          logger.warn('Chainalysis risk lookup failed:', chainalysisError.message);
+        }
+      }
+
       return {
         riskScore: Math.min(riskScore, 100),
         riskLevel: riskScore > 70 ? 'high' : riskScore > 30 ? 'medium' : 'low',
@@ -263,6 +383,42 @@ app.use(compression());
 app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+let metricsRegistry;
+let httpHistogram;
+
+if (metricsEnabled) {
+  metricsRegistry = new promClient.Registry();
+  promClient.collectDefaultMetrics({ register: metricsRegistry, prefix: 'payment_service_' });
+  httpHistogram = new promClient.Histogram({
+    name: 'payment_service_request_duration_seconds',
+    help: 'Duration of HTTP requests in seconds',
+    labelNames: ['method', 'route', 'status'],
+    buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5],
+    registers: [metricsRegistry]
+  });
+
+  app.use((req, res, next) => {
+    const end = httpHistogram.startTimer();
+    res.on('finish', () => {
+      const route = req.route?.path || req.originalUrl || 'unknown';
+      end({ method: req.method, route, status: res.statusCode });
+    });
+    next();
+  });
+
+  app.get('/metrics', async (req, res) => {
+    res.set('Content-Type', metricsRegistry.contentType);
+    res.end(await metricsRegistry.metrics());
+  });
+} else {
+  app.get('/metrics', (req, res) => {
+    res.status(503).json({
+      success: false,
+      error: { code: 'METRICS_DISABLED', message: 'Prometheus metrics are disabled' }
+    });
+  });
+}
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -404,6 +560,22 @@ app.post('/payments/send', authenticateToken, [
       });
     }
 
+    let onChainSettlement = null;
+    if (enableSmartContractSettlement && escrowContract) {
+      onChainSettlement = await recordEscrowSettlement({
+        payee: toAddress,
+        amount,
+        description: memo
+      });
+
+      if (onChainSettlement) {
+        await pool.query(
+          "UPDATE transactions SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb WHERE id = $2",
+          [JSON.stringify({ escrow: onChainSettlement }), transaction.id]
+        );
+      }
+    }
+
     // Start monitoring the transaction
     TransactionMonitor.monitorTransaction(transaction.id);
 
@@ -423,6 +595,7 @@ app.post('/payments/send', authenticateToken, [
           toAddress,
           status: transaction.status,
           riskAssessment,
+          ...(onChainSettlement && { onChainSettlement }),
           createdAt: transaction.created_at
         }
       },
