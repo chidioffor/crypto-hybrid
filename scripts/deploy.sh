@@ -59,15 +59,17 @@ create_directories() {
     mkdir -p data/postgres
     mkdir -p data/mongodb
     mkdir -p data/redis
+    mkdir -p data/kafka
     mkdir -p backups
     mkdir -p monitoring/grafana
     mkdir -p ssl
+    mkdir -p infrastructure/state
 }
 
 # Generate environment files
 generate_env_files() {
     log "Generating environment files..."
-    
+
     # Generate JWT secret
     JWT_SECRET=$(openssl rand -hex 64)
 
@@ -76,6 +78,13 @@ generate_env_files() {
     MONGO_PASSWORD=$(openssl rand -hex 16)
     REDIS_PASSWORD=$(openssl rand -hex 16)
 
+<<<<<<< ours
+=======
+    # Kafka credentials
+    KAFKA_SASL_USERNAME="service-$(openssl rand -hex 4)"
+    KAFKA_SASL_PASSWORD=$(openssl rand -hex 16)
+
+>>>>>>> theirs
     # Generate encryption keys
     WALLET_ENCRYPTION_KEY=$(openssl rand -base64 32)
     CARD_DATA_ENCRYPTION_KEY=$(openssl rand -base64 32)
@@ -83,11 +92,26 @@ generate_env_files() {
     # Generate monitoring password
     GRAFANA_ADMIN_PASSWORD=$(openssl rand -base64 18 | tr -d '=+/')
 
+<<<<<<< ours
+=======
+    # Generate TLS certificate if not present
+    if [ ! -f ssl/dev-cert.pem ] || [ ! -f ssl/dev-key.pem ]; then
+        log "Generating local TLS certificate (self-signed)..."
+        openssl req -x509 -nodes -days 365 \
+            -newkey rsa:2048 \
+            -keyout ssl/dev-key.pem \
+            -out ssl/dev-cert.pem \
+            -subj "/C=US/ST=NA/L=Remote/O=CryptoHybrid/OU=Dev/CN=localhost"
+    fi
+
+>>>>>>> theirs
     # Create .env file
     cat > .env << EOF
 # Environment
 NODE_ENV=production
 APP_VERSION=1.0.0
+ENABLE_MOCK_INTEGRATIONS=false
+ENABLE_PROMETHEUS_METRICS=true
 
 # Database Configuration
 POSTGRES_HOST=postgres
@@ -109,6 +133,16 @@ REDIS_PORT=6379
 REDIS_PASSWORD=${REDIS_PASSWORD}
 REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
 CARD_PROVISION_TOKEN_TTL=300
+<<<<<<< ours
+=======
+
+# Kafka
+KAFKA_BROKER=kafka:9092
+KAFKA_CLIENT_ID=cryptohybrid-platform
+KAFKA_SASL_MECHANISM=
+KAFKA_SASL_USERNAME=${KAFKA_SASL_USERNAME}
+KAFKA_SASL_PASSWORD=${KAFKA_SASL_PASSWORD}
+>>>>>>> theirs
 
 # JWT Configuration
 JWT_SECRET=${JWT_SECRET}
@@ -125,9 +159,12 @@ USER_SERVICE_URL=http://user-service:3001
 WALLET_SERVICE_URL=http://wallet-service:3002
 PAYMENT_SERVICE_URL=http://payment-service:3003
 CARD_SERVICE_URL=http://card-service:3004
+MOCK_SERVICE_URL=http://mock-backend:4000
 
 # Frontend Configuration
 REACT_APP_API_URL=http://localhost:3000
+REACT_APP_API_MODE=live
+REACT_APP_MOCK_API_URL=http://mock-backend:4000
 
 # External API Keys (Replace with your actual keys)
 PLAID_CLIENT_ID=your_plaid_client_id
@@ -150,12 +187,26 @@ ETHEREUM_RPC_URL=https://mainnet.infura.io/v3/your_project_id
 POLYGON_RPC_URL=https://polygon-mainnet.infura.io/v3/your_project_id
 BSC_RPC_URL=https://bsc-dataseed.binance.org/
 PRIVATE_KEY=your_deployment_private_key
+ENABLE_SMART_CONTRACT_SETTLEMENT=false
+ESCROW_CONTRACT_ADDRESS=
+ESCROW_ARBITER_ADDRESS=
+SMART_CONTRACT_NETWORK=sepolia
+SMART_CONTRACT_RPC_URL=
+HARDHAT_DEPLOYER_MNEMONIC=
 
 # Monitoring
 GRAFANA_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+<<<<<<< ours
+=======
+PROMETHEUS_SCRAPE_INTERVAL=30
+>>>>>>> theirs
 
 # Security
 ALLOWED_ORIGINS=http://localhost:3005,https://your-domain.com
+
+# TLS (self-signed certificate paths)
+TLS_CERT_PATH=/app/ssl/dev-cert.pem
+TLS_KEY_PATH=/app/ssl/dev-key.pem
 
 # Email Configuration (Optional)
 SMTP_HOST=smtp.gmail.com

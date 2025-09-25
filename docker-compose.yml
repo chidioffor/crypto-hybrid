@@ -22,6 +22,35 @@ services:
     networks:
       - cryptohybrid-network
 
+  zookeeper:
+    image: bitnami/zookeeper:3.9
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper_data:/bitnami/zookeeper
+    networks:
+      - cryptohybrid-network
+
+  kafka:
+    image: bitnami/kafka:3.6
+    environment:
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+      - KAFKA_CLIENT_USERS=${KAFKA_SASL_USERNAME:-}
+      - KAFKA_CLIENT_PASSWORDS=${KAFKA_SASL_PASSWORD:-}
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data:/bitnami/kafka
+    networks:
+      - cryptohybrid-network
+
   mongodb:
     image: mongo:7
     environment:
@@ -62,9 +91,21 @@ services:
       WALLET_SERVICE_URL: ${WALLET_SERVICE_URL:-http://wallet-service:3002}
       PAYMENT_SERVICE_URL: ${PAYMENT_SERVICE_URL:-http://payment-service:3003}
       CARD_SERVICE_URL: ${CARD_SERVICE_URL:-http://card-service:3004}
+<<<<<<< ours
     depends_on:
       - postgres
       - redis
+=======
+      MOCK_SERVICE_URL: ${MOCK_SERVICE_URL:-http://mock-backend:4000}
+      ENABLE_PROMETHEUS_METRICS: ${ENABLE_PROMETHEUS_METRICS:-true}
+    depends_on:
+      - postgres
+      - redis
+      - user-service
+      - wallet-service
+      - payment-service
+      - card-service
+>>>>>>> theirs
 
   # User Service
   user-service:
@@ -82,6 +123,11 @@ services:
       PLAID_CLIENT_ID: ${PLAID_CLIENT_ID:-}
       PLAID_SECRET: ${PLAID_SECRET:-}
       PLAID_ENV: ${PLAID_ENV:-sandbox}
+<<<<<<< ours
+=======
+      ENABLE_MOCK_INTEGRATIONS: ${ENABLE_MOCK_INTEGRATIONS:-false}
+      ENABLE_PROMETHEUS_METRICS: ${ENABLE_PROMETHEUS_METRICS:-true}
+>>>>>>> theirs
     depends_on:
       - postgres
       - redis
@@ -105,6 +151,11 @@ services:
       ETHEREUM_RPC_URL: ${ETHEREUM_RPC_URL:-}
       POLYGON_RPC_URL: ${POLYGON_RPC_URL:-}
       BSC_RPC_URL: ${BSC_RPC_URL:-}
+<<<<<<< ours
+=======
+      ENABLE_MOCK_INTEGRATIONS: ${ENABLE_MOCK_INTEGRATIONS:-false}
+      ENABLE_PROMETHEUS_METRICS: ${ENABLE_PROMETHEUS_METRICS:-true}
+>>>>>>> theirs
     depends_on:
       - postgres
       - redis
@@ -125,9 +176,28 @@ services:
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       CHAINALYSIS_API_KEY: ${CHAINALYSIS_API_KEY:-}
+<<<<<<< ours
     depends_on:
       - postgres
       - redis
+=======
+      KAFKA_BROKER: ${KAFKA_BROKER:-kafka:9092}
+      KAFKA_CLIENT_ID: ${KAFKA_CLIENT_ID:-cryptohybrid-platform}
+      KAFKA_SASL_MECHANISM: ${KAFKA_SASL_MECHANISM:-}
+      KAFKA_SASL_USERNAME: ${KAFKA_SASL_USERNAME:-}
+      KAFKA_SASL_PASSWORD: ${KAFKA_SASL_PASSWORD:-}
+      ENABLE_MOCK_INTEGRATIONS: ${ENABLE_MOCK_INTEGRATIONS:-false}
+      ENABLE_PROMETHEUS_METRICS: ${ENABLE_PROMETHEUS_METRICS:-true}
+      ENABLE_SMART_CONTRACT_SETTLEMENT: ${ENABLE_SMART_CONTRACT_SETTLEMENT:-false}
+      ESCROW_CONTRACT_ADDRESS: ${ESCROW_CONTRACT_ADDRESS:-}
+      ESCROW_ARBITER_ADDRESS: ${ESCROW_ARBITER_ADDRESS:-}
+      SMART_CONTRACT_NETWORK: ${SMART_CONTRACT_NETWORK:-sepolia}
+      SMART_CONTRACT_RPC_URL: ${SMART_CONTRACT_RPC_URL:-}
+    depends_on:
+      - postgres
+      - redis
+      - kafka
+>>>>>>> theirs
 
   # Card Service
   card-service:
@@ -146,6 +216,11 @@ services:
       CARD_PROVISION_TOKEN_TTL: ${CARD_PROVISION_TOKEN_TTL:-300}
       COLUMN_API_KEY: ${COLUMN_API_KEY:-}
       MARQETA_API_KEY: ${MARQETA_API_KEY:-}
+<<<<<<< ours
+=======
+      ENABLE_MOCK_INTEGRATIONS: ${ENABLE_MOCK_INTEGRATIONS:-false}
+      ENABLE_PROMETHEUS_METRICS: ${ENABLE_PROMETHEUS_METRICS:-true}
+>>>>>>> theirs
     depends_on:
       - postgres
       - redis
@@ -160,8 +235,27 @@ services:
       - "3005:3000"
     environment:
       REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:3000}
+<<<<<<< ours
     depends_on:
       - api-gateway
+=======
+      REACT_APP_API_MODE: ${REACT_APP_API_MODE:-live}
+      REACT_APP_MOCK_API_URL: ${REACT_APP_MOCK_API_URL:-http://localhost:4000}
+    depends_on:
+      - api-gateway
+
+  mock-backend:
+    <<: *service-defaults
+    build:
+      context: ./mock-backend
+      dockerfile: Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+    networks:
+      - cryptohybrid-network
+>>>>>>> theirs
 
   # Monitoring
   prometheus:
@@ -189,6 +283,8 @@ volumes:
   mongodb_data:
   redis_data:
   grafana_data:
+  kafka_data:
+  zookeeper_data:
 
 networks:
   cryptohybrid-network:

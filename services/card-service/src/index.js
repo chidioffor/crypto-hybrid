@@ -11,12 +11,20 @@ const { body, validationResult } = require('express-validator');
 const axios = require('axios');
 const cron = require('node-cron');
 const crypto = require('crypto');
+<<<<<<< ours
+=======
+const promClient = require('../../shared/metrics');
+>>>>>>> theirs
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3004;
 const CARD_ENCRYPTION_VERSION = 1;
 const CARD_PROVISION_PREFIX = 'card:provision:';
+<<<<<<< ours
+=======
+const metricsEnabled = process.env.ENABLE_PROMETHEUS_METRICS !== 'false';
+>>>>>>> theirs
 
 // Logger configuration
 const logger = winston.createLogger({
@@ -325,6 +333,42 @@ app.use(compression());
 app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+let metricsRegistry;
+let httpHistogram;
+
+if (metricsEnabled) {
+  metricsRegistry = new promClient.Registry();
+  promClient.collectDefaultMetrics({ register: metricsRegistry, prefix: 'card_service_' });
+  httpHistogram = new promClient.Histogram({
+    name: 'card_service_request_duration_seconds',
+    help: 'Duration of HTTP requests in seconds',
+    labelNames: ['method', 'route', 'status'],
+    buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5],
+    registers: [metricsRegistry]
+  });
+
+  app.use((req, res, next) => {
+    const end = httpHistogram.startTimer();
+    res.on('finish', () => {
+      const route = req.route?.path || req.originalUrl || 'unknown';
+      end({ method: req.method, route, status: res.statusCode });
+    });
+    next();
+  });
+
+  app.get('/metrics', async (req, res) => {
+    res.set('Content-Type', metricsRegistry.contentType);
+    res.end(await metricsRegistry.metrics());
+  });
+} else {
+  app.get('/metrics', (req, res) => {
+    res.status(503).json({
+      success: false,
+      error: { code: 'METRICS_DISABLED', message: 'Prometheus metrics are disabled' }
+    });
+  });
+}
 
 // Health check endpoint
 app.get('/health', (req, res) => {

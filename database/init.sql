@@ -53,6 +53,10 @@ CREATE TABLE IF NOT EXISTS wallets (
     chain_id INTEGER,
     encrypted_private_key TEXT,
     encrypted_seed_phrase TEXT,
+<<<<<<< ours
+=======
+    seed_phrase_hash VARCHAR(255),
+>>>>>>> theirs
     encryption_version INTEGER DEFAULT 1,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -63,14 +67,18 @@ CREATE TABLE IF NOT EXISTS wallets (
 -- Balances table (User asset balances)
 CREATE TABLE IF NOT EXISTS balances (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    wallet_id UUID NOT NULL REFERENCES wallets(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    wallet_id UUID REFERENCES wallets(id) ON DELETE CASCADE,
     asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
-    amount DECIMAL(30, 18) DEFAULT 0,
-    locked_amount DECIMAL(30, 18) DEFAULT 0,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    balance DECIMAL(36, 18) NOT NULL DEFAULT 0,
+    locked_balance DECIMAL(36, 18) NOT NULL DEFAULT 0,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    UNIQUE(wallet_id, asset_id)
+    UNIQUE(user_id, wallet_id, asset_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_balances_user_id ON balances(user_id);
+CREATE INDEX IF NOT EXISTS idx_balances_wallet_id ON balances(wallet_id);
+CREATE INDEX IF NOT EXISTS idx_balances_asset_id ON balances(asset_id);
 
 -- Virtual IBANs table (Virtual bank accounts)
 CREATE TABLE IF NOT EXISTS virtual_ibans (
@@ -91,23 +99,27 @@ CREATE TABLE IF NOT EXISTS virtual_ibans (
 CREATE TABLE IF NOT EXISTS transactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    from_wallet_id UUID REFERENCES wallets(id),
-    to_wallet_id UUID REFERENCES wallets(id),
-    from_address VARCHAR(255),
-    to_address VARCHAR(255),
-    asset_id UUID NOT NULL REFERENCES assets(id),
-    amount DECIMAL(30, 18) NOT NULL,
-    fee DECIMAL(30, 18) DEFAULT 0,
-    type VARCHAR(50) NOT NULL CHECK (type IN ('send', 'receive', 'swap', 'deposit', 'withdrawal', 'stake', 'unstake')),
-    status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'failed', 'cancelled')),
-    tx_hash VARCHAR(255),
-    block_number BIGINT,
-    confirmations INTEGER DEFAULT 0,
-    memo TEXT,
+    transaction_type VARCHAR(20) NOT NULL,
+    from_wallet_id UUID REFERENCES wallets(id) ON DELETE SET NULL,
+    to_wallet_id UUID REFERENCES wallets(id) ON DELETE SET NULL,
+    from_asset_id UUID REFERENCES assets(id) ON DELETE SET NULL,
+    to_asset_id UUID REFERENCES assets(id) ON DELETE SET NULL,
+    amount DECIMAL(36, 18) NOT NULL,
+    fee DECIMAL(36, 18) DEFAULT 0,
+    exchange_rate DECIMAL(36, 18),
+    blockchain_tx_hash VARCHAR(255),
+    status VARCHAR(20) DEFAULT 'pending',
+    risk_score DECIMAL(5, 2),
     metadata JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    completed_at TIMESTAMP WITH TIME ZONE
 );
+
+CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(transaction_type);
+CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
+CREATE INDEX IF NOT EXISTS idx_transactions_hash ON transactions(blockchain_tx_hash);
+CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions(created_at);
 
 -- Cards table (Crypto payment cards)
 CREATE TABLE IF NOT EXISTS cards (
@@ -126,7 +138,41 @@ CREATE TABLE IF NOT EXISTS cards (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     UNIQUE(card_number_hash)
+<<<<<<< ours
+=======
 );
+
+CREATE INDEX IF NOT EXISTS idx_cards_user_id ON cards(user_id);
+CREATE INDEX IF NOT EXISTS idx_cards_status ON cards(status);
+CREATE INDEX IF NOT EXISTS idx_cards_type ON cards(card_type);
+
+CREATE TABLE IF NOT EXISTS card_controls (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    card_id UUID NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+    merchant_categories TEXT[],
+    geographic_restrictions TEXT[],
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(card_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_card_controls_card_id ON card_controls(card_id);
+
+CREATE TABLE IF NOT EXISTS card_transactions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    card_id UUID NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+    amount DECIMAL(15, 2) NOT NULL,
+    currency VARCHAR(3) NOT NULL,
+    merchant VARCHAR(255),
+    category VARCHAR(100),
+    status VARCHAR(20) DEFAULT 'pending',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+>>>>>>> theirs
+);
+
+CREATE INDEX IF NOT EXISTS idx_card_transactions_card_id ON card_transactions(card_id);
+CREATE INDEX IF NOT EXISTS idx_card_transactions_status ON card_transactions(status);
+CREATE INDEX IF NOT EXISTS idx_card_transactions_created_at ON card_transactions(created_at);
 
 -- Loans table (Crypto-collateralized loans)
 CREATE TABLE IF NOT EXISTS loans (
@@ -273,15 +319,7 @@ CREATE TABLE IF NOT EXISTS swaps (
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_kyc_status ON users(kyc_status);
 CREATE INDEX IF NOT EXISTS idx_wallets_user_id ON wallets(user_id);
-CREATE INDEX IF NOT EXISTS idx_wallets_address ON wallets(address);
-CREATE INDEX IF NOT EXISTS idx_balances_wallet_id ON balances(wallet_id);
-CREATE INDEX IF NOT EXISTS idx_balances_asset_id ON balances(asset_id);
-CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id);
-CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
-CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type);
-CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions(created_at);
-CREATE INDEX IF NOT EXISTS idx_cards_user_id ON cards(user_id);
-CREATE INDEX IF NOT EXISTS idx_cards_status ON cards(status);
+CREATE INDEX IF NOT EXISTS idx_wallets_address ON wallets(wallet_address);
 CREATE INDEX IF NOT EXISTS idx_loans_user_id ON loans(user_id);
 CREATE INDEX IF NOT EXISTS idx_loans_status ON loans(status);
 CREATE INDEX IF NOT EXISTS idx_investments_user_id ON investments(user_id);
