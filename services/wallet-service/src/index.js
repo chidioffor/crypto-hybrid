@@ -21,6 +21,11 @@ const app = express();
 const PORT = process.env.PORT || 3002;
 const ENCRYPTION_VERSION = 1;
 <<<<<<< ours
+<<<<<<< ours
+=======
+const enableMockIntegrations = process.env.ENABLE_MOCK_INTEGRATIONS === 'true';
+const metricsEnabled = process.env.ENABLE_PROMETHEUS_METRICS !== 'false';
+>>>>>>> theirs
 =======
 const enableMockIntegrations = process.env.ENABLE_MOCK_INTEGRATIONS === 'true';
 const metricsEnabled = process.env.ENABLE_PROMETHEUS_METRICS !== 'false';

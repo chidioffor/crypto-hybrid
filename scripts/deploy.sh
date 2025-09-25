@@ -79,11 +79,17 @@ generate_env_files() {
     REDIS_PASSWORD=$(openssl rand -hex 16)
 
 <<<<<<< ours
+<<<<<<< ours
 =======
+=======
+>>>>>>> theirs
     # Kafka credentials
     KAFKA_SASL_USERNAME="service-$(openssl rand -hex 4)"
     KAFKA_SASL_PASSWORD=$(openssl rand -hex 16)
 
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
     # Generate encryption keys
     WALLET_ENCRYPTION_KEY=$(openssl rand -base64 32)
@@ -93,7 +99,10 @@ generate_env_files() {
     GRAFANA_ADMIN_PASSWORD=$(openssl rand -base64 18 | tr -d '=+/')
 
 <<<<<<< ours
+<<<<<<< ours
 =======
+=======
+>>>>>>> theirs
     # Generate TLS certificate if not present
     if [ ! -f ssl/dev-cert.pem ] || [ ! -f ssl/dev-key.pem ]; then
         log "Generating local TLS certificate (self-signed)..."
@@ -104,6 +113,9 @@ generate_env_files() {
             -subj "/C=US/ST=NA/L=Remote/O=CryptoHybrid/OU=Dev/CN=localhost"
     fi
 
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
     # Create .env file
     cat > .env << EOF
@@ -134,7 +146,10 @@ REDIS_PASSWORD=${REDIS_PASSWORD}
 REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
 CARD_PROVISION_TOKEN_TTL=300
 <<<<<<< ours
+<<<<<<< ours
 =======
+=======
+>>>>>>> theirs
 
 # Kafka
 KAFKA_BROKER=kafka:9092
@@ -142,6 +157,9 @@ KAFKA_CLIENT_ID=cryptohybrid-platform
 KAFKA_SASL_MECHANISM=
 KAFKA_SASL_USERNAME=${KAFKA_SASL_USERNAME}
 KAFKA_SASL_PASSWORD=${KAFKA_SASL_PASSWORD}
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 
 # JWT Configuration
@@ -197,6 +215,10 @@ HARDHAT_DEPLOYER_MNEMONIC=
 # Monitoring
 GRAFANA_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
 <<<<<<< ours
+<<<<<<< ours
+=======
+PROMETHEUS_SCRAPE_INTERVAL=30
+>>>>>>> theirs
 =======
 PROMETHEUS_SCRAPE_INTERVAL=30
 >>>>>>> theirs

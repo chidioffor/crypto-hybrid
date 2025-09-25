@@ -54,6 +54,10 @@ CREATE TABLE IF NOT EXISTS wallets (
     encrypted_private_key TEXT,
     encrypted_seed_phrase TEXT,
 <<<<<<< ours
+<<<<<<< ours
+=======
+    seed_phrase_hash VARCHAR(255),
+>>>>>>> theirs
 =======
     seed_phrase_hash VARCHAR(255),
 >>>>>>> theirs
@@ -139,7 +143,10 @@ CREATE TABLE IF NOT EXISTS cards (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     UNIQUE(card_number_hash)
 <<<<<<< ours
+<<<<<<< ours
 =======
+=======
+>>>>>>> theirs
 );
 
 CREATE INDEX IF NOT EXISTS idx_cards_user_id ON cards(user_id);
@@ -167,6 +174,9 @@ CREATE TABLE IF NOT EXISTS card_transactions (
     category VARCHAR(100),
     status VARCHAR(20) DEFAULT 'pending',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 );
 

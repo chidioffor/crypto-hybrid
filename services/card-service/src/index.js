@@ -12,6 +12,10 @@ const axios = require('axios');
 const cron = require('node-cron');
 const crypto = require('crypto');
 <<<<<<< ours
+<<<<<<< ours
+=======
+const promClient = require('../../shared/metrics');
+>>>>>>> theirs
 =======
 const promClient = require('../../shared/metrics');
 >>>>>>> theirs
@@ -22,6 +26,10 @@ const PORT = process.env.PORT || 3004;
 const CARD_ENCRYPTION_VERSION = 1;
 const CARD_PROVISION_PREFIX = 'card:provision:';
 <<<<<<< ours
+<<<<<<< ours
+=======
+const metricsEnabled = process.env.ENABLE_PROMETHEUS_METRICS !== 'false';
+>>>>>>> theirs
 =======
 const metricsEnabled = process.env.ENABLE_PROMETHEUS_METRICS !== 'false';
 >>>>>>> theirs
