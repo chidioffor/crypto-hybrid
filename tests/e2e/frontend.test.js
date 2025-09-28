@@ -1,5 +1,23 @@
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
+const chromeLauncher = require('chrome-launcher');
 const { expect } = require('chai');
+
+async function resolveChromeExecutable() {
+  if (process.env.CHROME_PATH) {
+    return process.env.CHROME_PATH;
+  }
+
+  const installations = await chromeLauncher.Launcher.getInstallations();
+
+  if (installations && installations.length > 0) {
+    return installations[0];
+  }
+
+  throw new Error(
+    'Unable to locate a Chrome/Chromium installation. ' +
+      'Set the CHROME_PATH environment variable to the Chrome executable.'
+  );
+}
 
 describe('CryptoHybrid Bank Frontend E2E Tests', () => {
   let browser;
@@ -7,7 +25,10 @@ describe('CryptoHybrid Bank Frontend E2E Tests', () => {
   const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3005';
 
   before(async () => {
+    const executablePath = await resolveChromeExecutable();
+
     browser = await puppeteer.launch({
+      executablePath,
       headless: process.env.HEADLESS !== 'false',
       slowMo: 50,
       args: ['--no-sandbox', '--disable-setuid-sandbox']
