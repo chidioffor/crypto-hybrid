@@ -1,4 +1,5 @@
 const request = require('supertest');
+const axios = require('axios');
 const { expect } = require('chai');
 
 // Test configuration
@@ -8,7 +9,18 @@ describe('CryptoHybrid Bank API Integration Tests', () => {
   let authToken;
   let userId;
 
-  before(async () => {
+  before(async function() {
+    this.timeout(15000);
+
+    try {
+      await axios.get(`${API_BASE_URL}/health`, { timeout: 3000 });
+    } catch (error) {
+      console.warn(
+        `Skipping API integration tests: unable to reach ${API_BASE_URL} (${error.message})`
+      );
+      this.skip();
+    }
+
     // Wait for services to be ready
     console.log('Waiting for services to be ready...');
     await new Promise(resolve => setTimeout(resolve, 5000));

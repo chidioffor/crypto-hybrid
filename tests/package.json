@@ -4,7 +4,7 @@
   "description": "Integration and end-to-end tests for CryptoHybrid Bank",
   "main": "index.js",
   "scripts": {
-    "test": "mocha --recursive --timeout 30000",
+    "test": "mocha \"integration/**/*.test.js\" \"e2e/**/*.test.js\" --timeout 30000",
     "test:integration": "mocha integration/*.test.js --timeout 30000",
     "test:e2e": "mocha e2e/*.test.js --timeout 60000",
     "test:watch": "mocha --recursive --timeout 30000 --watch",

@@ -87,6 +87,20 @@ cp .env.example .env
 # Edit .env with your configuration
 ```
 
+### Environment configuration
+
+The application now validates required environment variables at startup so misconfigured deployments fail fast with actionable errors. Configure the following before running the services:
+
+| Component | Required variables | Optional variables |
+|-----------|--------------------|--------------------|
+| API Gateway | `JWT_SECRET` | `PORT`, `CORS_ORIGINS`, `USER_SERVICE_URL`, `WALLET_SERVICE_URL`, `PAYMENT_SERVICE_URL`, `CARD_SERVICE_URL`, `RATE_LIMIT_WINDOW_MINUTES`, `RATE_LIMIT_MAX_REQUESTS`, `LOG_LEVEL` |
+| User Service | `DATABASE_URL`, `JWT_SECRET` | `PORT`, `REDIS_URL`, `CORS_ORIGINS`, `DB_MAX_CONNECTIONS`, `DB_IDLE_TIMEOUT_MS`, `LOG_LEVEL` |
+| Wallet Service | `DATABASE_URL`, `JWT_SECRET` | `PORT`, `REDIS_URL`, `CORS_ORIGINS`, `DB_MAX_CONNECTIONS`, `DB_IDLE_TIMEOUT_MS`, `ETHEREUM_RPC_URL`, `POLYGON_RPC_URL`, `BSC_RPC_URL`, `LOG_LEVEL` |
+| Payment Service | `DATABASE_URL`, `JWT_SECRET`, `STRIPE_SECRET_KEY` | `PORT`, `REDIS_URL`, `CORS_ORIGINS`, `DB_MAX_CONNECTIONS`, `DB_IDLE_TIMEOUT_MS`, `STRIPE_API_VERSION`, `STRIPE_WEBHOOK_SECRET`, `KAFKA_BROKERS`, `KAFKA_CLIENT_ID`, `KAFKA_BROKER`, `KAFKA_SSL`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD`, `KAFKA_SASL_MECHANISM`, `LOG_LEVEL` |
+| Card Service | `DATABASE_URL`, `JWT_SECRET` | `PORT`, `REDIS_URL`, `CORS_ORIGINS`, `DB_MAX_CONNECTIONS`, `DB_IDLE_TIMEOUT_MS`, `CARD_VENDORS_API`, `LOG_LEVEL` |
+
+Each service also supports graceful shutdown signals (`SIGINT`/`SIGTERM`) and will close Redis, PostgreSQL, and Kafka connections cleanly.
+
 3. **Install dependencies**
 ```bash
 npm install

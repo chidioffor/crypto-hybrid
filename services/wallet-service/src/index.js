@@ -16,12 +16,14 @@ const axios = require('axios');
 const cron = require('node-cron');
 require('dotenv').config();
 
+const config = require('./config');
+
 const app = express();
-const PORT = process.env.PORT || 3002;
+const PORT = config.port;
 
 // Logger configuration
 const logger = winston.createLogger({
-  level: 'info',
+  level: config.logLevel,
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format.errors({ stack: true }),
@@ -36,23 +38,25 @@ const logger = winston.createLogger({
 
 // Database connection
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+  connectionString: config.databaseUrl,
+  ssl: config.isProduction ? { rejectUnauthorized: false } : false,
+  max: config.db.maxConnections,
+  idleTimeoutMillis: config.db.idleTimeoutMs
 });
 
 // Redis connection
 const redisClient = redis.createClient({
-  url: process.env.REDIS_URL
+  url: config.redisUrl,
+  ...config.redis
 });
 
 redisClient.on('error', (err) => logger.error('Redis Client Error:', err));
-redisClient.connect();
 
 // Blockchain providers
 const providers = {
-  ethereum: new ethers.JsonRpcProvider(process.env.ETHEREUM_RPC_URL || 'https://mainnet.infura.io/v3/your-project-id'),
-  polygon: new ethers.JsonRpcProvider(process.env.POLYGON_RPC_URL || 'https://polygon-rpc.com'),
-  bsc: new ethers.JsonRpcProvider(process.env.BSC_RPC_URL || 'https://bsc-dataseed.binance.org')
+  ethereum: new ethers.JsonRpcProvider(config.blockchain.ethereumRpcUrl || 'https://mainnet.infura.io/v3/your-project-id'),
+  polygon: new ethers.JsonRpcProvider(config.blockchain.polygonRpcUrl || 'https://polygon-rpc.com'),
+  bsc: new ethers.JsonRpcProvider(config.blockchain.bscRpcUrl || 'https://bsc-dataseed.binance.org')
 };
 
 // JWT Authentication Middleware
@@ -68,7 +72,7 @@ const authenticateToken = async (req, res, next) => {
   }
 
   try {
-    const user = jwt.verify(token, process.env.JWT_SECRET);
+    const user = jwt.verify(token, config.jwtSecret);
     req.user = user;
     next();
   } catch (err) {
@@ -179,7 +183,11 @@ class PriceManager {
 
 // Middleware
 app.use(helmet());
-app.use(cors());
+if (config.corsOrigins.length > 0) {
+  app.use(cors({ origin: config.corsOrigins, credentials: true }));
+} else {
+  app.use(cors());
+}
 app.use(compression());
 app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
 app.use(express.json({ limit: '10mb' }));
@@ -668,10 +676,73 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start server
-app.listen(PORT, () => {
-  logger.info(`Wallet Service running on port ${PORT}`);
-  logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+let server;
+
+const ensureDatabaseConnection = async () => {
+  const client = await pool.connect();
+  try {
+    await client.query('SELECT 1');
+  } finally {
+    client.release();
+  }
+};
+
+const ensureRedisConnection = async () => {
+  if (!redisClient.isOpen) {
+    await redisClient.connect();
+  }
+};
+
+const start = async () => {
+  try {
+    await ensureDatabaseConnection();
+    await ensureRedisConnection();
+
+    server = app.listen(PORT, () => {
+      logger.info(`Wallet Service running on port ${PORT}`);
+      logger.info(`Environment: ${config.env}`);
+    });
+  } catch (error) {
+    logger.error('Failed to start Wallet Service', error);
+    throw error;
+  }
+};
+
+const shutdown = async (signal) => {
+  logger.info(`Received ${signal}. Shutting down Wallet Service.`);
+
+  if (server) {
+    await new Promise((resolve) => server.close(resolve));
+  }
+
+  await Promise.all([
+    pool.end().catch((error) => logger.error('Error closing database pool', error)),
+    redisClient.isOpen ? redisClient.quit().catch((error) => logger.error('Error closing Redis connection', error)) : Promise.resolve()
+  ]);
+
+  logger.info('Shutdown complete.');
+};
+
+process.on('SIGINT', () => shutdown('SIGINT').then(() => process.exit(0)));
+process.on('SIGTERM', () => shutdown('SIGTERM').then(() => process.exit(0)));
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught exception', error);
+  shutdown('uncaughtException').then(() => process.exit(1));
+});
+process.on('unhandledRejection', (reason) => {
+  logger.error('Unhandled promise rejection', reason);
+  shutdown('unhandledRejection').then(() => process.exit(1));
 });
 
-module.exports = app;
+if (require.main === module) {
+  start().catch(() => process.exit(1));
+}
+
+module.exports = {
+  app,
+  start,
+  shutdown,
+  pool,
+  redisClient,
+  providers
+};

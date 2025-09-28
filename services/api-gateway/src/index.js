@@ -9,12 +9,14 @@ const jwt = require('jsonwebtoken');
 const winston = require('winston');
 require('dotenv').config();
 
+const config = require('./config');
+
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = config.port;
 
 // Logger configuration
 const logger = winston.createLogger({
-  level: 'info',
+  level: config.logLevel,
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format.errors({ stack: true }),
@@ -29,7 +31,11 @@ const logger = winston.createLogger({
 
 // Middleware
 app.use(helmet());
-app.use(cors());
+if (config.corsOrigins.length > 0) {
+  app.use(cors({ origin: config.corsOrigins, credentials: true }));
+} else {
+  app.use(cors());
+}
 app.use(compression());
 app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
 app.use(express.json({ limit: '10mb' }));
@@ -37,8 +43,8 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  windowMs: config.rateLimit.windowMinutes * 60 * 1000,
+  max: config.rateLimit.maxRequests,
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
@@ -57,7 +63,7 @@ const authenticateToken = (req, res, next) => {
     });
   }
 
-  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+  jwt.verify(token, config.jwtSecret, (err, user) => {
     if (err) {
       return res.status(403).json({ 
         success: false, 
@@ -82,22 +88,22 @@ app.get('/health', (req, res) => {
 // Service discovery and proxy configuration
 const services = {
   user: {
-    target: process.env.USER_SERVICE_URL || 'http://user-service:3001',
+    target: config.services.user,
     pathRewrite: { '^/api/users': '' },
     changeOrigin: true
   },
   wallet: {
-    target: process.env.WALLET_SERVICE_URL || 'http://wallet-service:3002',
+    target: config.services.wallet,
     pathRewrite: { '^/api/wallets': '' },
     changeOrigin: true
   },
   payment: {
-    target: process.env.PAYMENT_SERVICE_URL || 'http://payment-service:3003',
+    target: config.services.payment,
     pathRewrite: { '^/api/payments': '' },
     changeOrigin: true
   },
   card: {
-    target: process.env.CARD_SERVICE_URL || 'http://card-service:3004',
+    target: config.services.card,
     pathRewrite: { '^/api/cards': '' },
     changeOrigin: true
   }
@@ -229,10 +235,41 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start server
-app.listen(PORT, () => {
-  logger.info(`API Gateway running on port ${PORT}`);
-  logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+let server;
+
+const start = async () => {
+  server = app.listen(PORT, () => {
+    logger.info(`API Gateway running on port ${PORT}`);
+    logger.info(`Environment: ${config.env}`);
+  });
+  return server;
+};
+
+const shutdown = async (signal) => {
+  logger.info(`Received ${signal}. Shutting down API Gateway.`);
+  if (server) {
+    await new Promise((resolve) => server.close(resolve));
+  }
+  logger.info('Shutdown complete.');
+};
+
+process.on('SIGINT', () => shutdown('SIGINT').then(() => process.exit(0)));
+process.on('SIGTERM', () => shutdown('SIGTERM').then(() => process.exit(0)));
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught exception', error);
+  shutdown('uncaughtException').then(() => process.exit(1));
+});
+process.on('unhandledRejection', (reason) => {
+  logger.error('Unhandled promise rejection', reason);
+  shutdown('unhandledRejection').then(() => process.exit(1));
 });
 
-module.exports = app;
+if (require.main === module) {
+  start().catch(() => process.exit(1));
+}
+
+module.exports = {
+  app,
+  start,
+  shutdown
+};

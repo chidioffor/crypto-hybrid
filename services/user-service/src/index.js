@@ -14,12 +14,14 @@ const speakeasy = require('speakeasy');
 const QRCode = require('qrcode');
 require('dotenv').config();
 
+const config = require('./config');
+
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = config.port;
 
 // Logger configuration
 const logger = winston.createLogger({
-  level: 'info',
+  level: config.logLevel,
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format.errors({ stack: true }),
@@ -34,21 +36,27 @@ const logger = winston.createLogger({
 
 // Database connection
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+  connectionString: config.databaseUrl,
+  ssl: config.isProduction ? { rejectUnauthorized: false } : false,
+  max: config.db.maxConnections,
+  idleTimeoutMillis: config.db.idleTimeoutMs
 });
 
 // Redis connection
 const redisClient = redis.createClient({
-  url: process.env.REDIS_URL
+  url: config.redisUrl,
+  ...config.redis
 });
 
 redisClient.on('error', (err) => logger.error('Redis Client Error:', err));
-redisClient.connect();
 
 // Middleware
 app.use(helmet());
-app.use(cors());
+if (config.corsOrigins.length > 0) {
+  app.use(cors({ origin: config.corsOrigins, credentials: true }));
+} else {
+  app.use(cors());
+}
 app.use(compression());
 app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
 app.use(express.json({ limit: '10mb' }));
@@ -83,7 +91,7 @@ const authenticateToken = async (req, res, next) => {
       });
     }
 
-    const user = jwt.verify(token, process.env.JWT_SECRET);
+    const user = jwt.verify(token, config.jwtSecret);
     req.user = user;
     next();
   } catch (err) {
@@ -162,14 +170,14 @@ app.post('/auth/register', [
     // Generate JWT token
     const token = jwt.sign(
       { userId: user.id, email: user.email },
-      process.env.JWT_SECRET,
+      config.jwtSecret,
       { expiresIn: '1h' }
     );
 
     // Generate refresh token
     const refreshToken = jwt.sign(
       { userId: user.id, email: user.email },
-      process.env.JWT_SECRET,
+      config.jwtSecret,
       { expiresIn: '7d' }
     );
 
@@ -270,14 +278,14 @@ app.post('/auth/login', [
     // Generate JWT token
     const token = jwt.sign(
       { userId: user.id, email: user.email },
-      process.env.JWT_SECRET,
+      config.jwtSecret,
       { expiresIn: '1h' }
     );
 
     // Generate refresh token
     const refreshToken = jwt.sign(
       { userId: user.id, email: user.email },
-      process.env.JWT_SECRET,
+      config.jwtSecret,
       { expiresIn: '7d' }
     );
 
@@ -328,7 +336,7 @@ app.post('/auth/refresh', async (req, res) => {
       });
     }
 
-    const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+    const decoded = jwt.verify(refreshToken, config.jwtSecret);
     
     // Check if refresh token exists in Redis
     const storedToken = await redisClient.get(`refresh:${decoded.userId}`);
@@ -342,7 +350,7 @@ app.post('/auth/refresh', async (req, res) => {
     // Generate new access token
     const newToken = jwt.sign(
       { userId: decoded.userId, email: decoded.email },
-      process.env.JWT_SECRET,
+      config.jwtSecret,
       { expiresIn: '1h' }
     );
 
@@ -681,10 +689,72 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start server
-app.listen(PORT, () => {
-  logger.info(`User Service running on port ${PORT}`);
-  logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+let server;
+
+const ensureDatabaseConnection = async () => {
+  const client = await pool.connect();
+  try {
+    await client.query('SELECT 1');
+  } finally {
+    client.release();
+  }
+};
+
+const ensureRedisConnection = async () => {
+  if (!redisClient.isOpen) {
+    await redisClient.connect();
+  }
+};
+
+const start = async () => {
+  try {
+    await ensureDatabaseConnection();
+    await ensureRedisConnection();
+
+    server = app.listen(PORT, () => {
+      logger.info(`User Service running on port ${PORT}`);
+      logger.info(`Environment: ${config.env}`);
+    });
+  } catch (error) {
+    logger.error('Failed to start User Service', error);
+    throw error;
+  }
+};
+
+const shutdown = async (signal) => {
+  logger.info(`Received ${signal}. Shutting down User Service.`);
+
+  if (server) {
+    await new Promise((resolve) => server.close(resolve));
+  }
+
+  await Promise.all([
+    pool.end().catch((error) => logger.error('Error closing database pool', error)),
+    redisClient.isOpen ? redisClient.quit().catch((error) => logger.error('Error closing Redis connection', error)) : Promise.resolve()
+  ]);
+
+  logger.info('Shutdown complete.');
+};
+
+process.on('SIGINT', () => shutdown('SIGINT').then(() => process.exit(0)));
+process.on('SIGTERM', () => shutdown('SIGTERM').then(() => process.exit(0)));
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught exception', error);
+  shutdown('uncaughtException').then(() => process.exit(1));
+});
+process.on('unhandledRejection', (reason) => {
+  logger.error('Unhandled promise rejection', reason);
+  shutdown('unhandledRejection').then(() => process.exit(1));
 });
 
-module.exports = app;
+if (require.main === module) {
+  start().catch(() => process.exit(1));
+}
+
+module.exports = {
+  app,
+  start,
+  shutdown,
+  pool,
+  redisClient
+};
