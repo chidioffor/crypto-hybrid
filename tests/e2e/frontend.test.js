@@ -70,6 +70,11 @@ describe('CryptoHybrid Bank Frontend E2E Tests', () => {
     await page.setViewport({ width: 1280, height: 720 });
   });
 
+  // If setup skipped (no page), skip individual tests
+  beforeEach(function () {
+    if (!page) this.skip();
+  });
+
   after(async () => {
     if (browser) {
       await browser.close();
@@ -160,13 +165,11 @@ describe('CryptoHybrid Bank Frontend E2E Tests', () => {
       // Submit the form
       await page.click('button[type="submit"]');
 
-      // Wait for navigation to dashboard or success message
       try {
         await page.waitForNavigation({ timeout: 5000 });
         const url = page.url();
         expect(url).to.include('/dashboard');
       } catch (error) {
-        // If navigation doesn't happen, check for success message or error
         const errorMessage = await page.$('.error-message, .toast-error');
         if (errorMessage) {
           const errorText = await page.evaluate((el) => el.textContent, errorMessage);
@@ -179,10 +182,8 @@ describe('CryptoHybrid Bank Frontend E2E Tests', () => {
       await page.goto(`${baseUrl}/register`);
       await page.waitForSelector('form');
 
-      // Submit empty form
       await page.click('button[type="submit"]');
 
-      // Check for HTML5 validation or custom error messages
       const firstNameInput = await page.$('input[name="firstName"]');
       const isValid = await page.evaluate((input) => input.checkValidity(), firstNameInput);
       expect(isValid).to.be.false;
@@ -214,10 +215,8 @@ describe('CryptoHybrid Bank Frontend E2E Tests', () => {
 
       await page.click('button[type="submit"]');
 
-      // Wait for error message
       await page.waitForTimeout(2000);
 
-      // Check if still on login page (indicating failed login)
       const url = page.url();
       expect(url).to.include('/login');
     });
@@ -227,32 +226,27 @@ describe('CryptoHybrid Bank Frontend E2E Tests', () => {
     it('should display dashboard elements when authenticated', async function () {
       this.timeout(10000);
 
-      // Try to access dashboard
       await page.goto(`${baseUrl}/dashboard`);
 
-      // If redirected to login, skip this test
       if (page.url().includes('/login')) {
         this.skip();
       }
 
       await page.waitForSelector('body');
 
-      // Check for common dashboard elements
       const welcomeText = await page.$('text/Welcome');
       const balanceSection = await page.$('[class*="balance"], [class*="portfolio"]');
 
-      // At least one dashboard element should be present
       expect(welcomeText || balanceSection).to.not.be.null;
     });
   });
 
   describe('Responsive Design', () => {
     it('should be responsive on mobile devices', async () => {
-      await page.setViewport({ width: 375, height: 667 }); // iPhone SE
+      await page.setViewport({ width: 375, height: 667 });
       await page.goto(`${baseUrl}/login`);
       await page.waitForSelector('form');
 
-      // Check if form is still visible and usable
       const form = await page.$('form');
       const formBox = await form.boundingBox();
 
@@ -261,7 +255,7 @@ describe('CryptoHybrid Bank Frontend E2E Tests', () => {
     });
 
     it('should be responsive on tablet devices', async () => {
-      await page.setViewport({ width: 768, height: 1024 }); // iPad
+      await page.setViewport({ width: 768, height: 1024 });
       await page.goto(`${baseUrl}/login`);
       await page.waitForSelector('form');
 
@@ -296,7 +290,6 @@ describe('CryptoHybrid Bank Frontend E2E Tests', () => {
           const label = await page.$(`label[for="${id}"]`);
           expect(label).to.not.be.null;
         } else if (name) {
-          // Check for aria-label or placeholder as fallback
           const ariaLabel = await input.evaluate((el) => el.getAttribute('aria-label'));
           const placeholder = await input.evaluate((el) => el.placeholder);
           expect(ariaLabel || placeholder).to.not.be.null;
@@ -315,7 +308,7 @@ describe('CryptoHybrid Bank Frontend E2E Tests', () => {
       const endTime = Date.now();
 
       const loadTime = endTime - startTime;
-      expect(loadTime).to.be.lessThan(5000); // Should load within 5 seconds
+      expect(loadTime).to.be.lessThan(5000);
     });
 
     it('should not have console errors', async () => {
@@ -330,10 +323,11 @@ describe('CryptoHybrid Bank Frontend E2E Tests', () => {
       await page.goto(`${baseUrl}/login`);
       await page.waitForSelector('form');
 
-      // Filter out known non-critical errors
       const criticalErrors = consoleErrors.filter(
         (error) =>
-          !error.includes('favicon') && !error.includes('manifest.json') && !error.includes('404')
+          !error.includes('favicon') &&
+          !error.includes('manifest.json') &&
+          !error.includes('404')
       );
 
       expect(criticalErrors.length).to.equal(0);

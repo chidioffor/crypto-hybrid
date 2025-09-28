@@ -1,14 +1,14 @@
 {
   "name": "cryptohybrid-bank-tests",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Integration and end-to-end tests for CryptoHybrid Bank",
   "main": "index.js",
   "scripts": {
-    "test": "mocha \"integration/**/*.test.js\" \"e2e/**/*.test.js\" --timeout 30000",
-    "test:integration": "mocha integration/*.test.js --timeout 30000",
-    "test:e2e": "mocha e2e/*.test.js --timeout 60000",
-    "test:watch": "mocha --recursive --timeout 30000 --watch",
-    "test:coverage": "nyc mocha --recursive --timeout 30000"
+    "test": "mocha --require ./mocha-require-hook.js --recursive --extension js,mjs,cjs tests/integration tests/e2e --timeout 30000",
+    "test:integration": "mocha --require ./mocha-require-hook.js --recursive --extension js,mjs,cjs tests/integration --timeout 30000",
+    "test:e2e": "mocha --require ./mocha-require-hook.js --recursive --extension js,mjs,cjs tests/e2e --timeout 60000",
+    "test:watch": "mocha --require ./mocha-require-hook.js --recursive --extension js,mjs,cjs --watch tests --timeout 30000",
+    "test:coverage": "nyc mocha --require ./mocha-require-hook.js --recursive --extension js,mjs,cjs tests --timeout 30000"
   },
   "keywords": [
     "testing",
@@ -21,12 +21,12 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "chai": "^4.3.10",
-    "mocha": "^10.2.0",
-    "supertest": "^6.3.3",
     "axios": "^1.6.2",
+    "chai": "^4.3.10",
     "chrome-launcher": "^0.15.1",
-    "puppeteer-core": "^21.5.2"
+    "mocha": "^10.2.0",
+    "puppeteer-core": "^21.5.2",
+    "supertest": "^6.3.3"
   },
   "devDependencies": {
     "nyc": "^15.1.0"
