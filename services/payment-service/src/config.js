@@ -1,3 +1,4 @@
+require('dotenv').config();
 const DEFAULT_REDIS_URL = 'redis://localhost:6379';
 
 const parseNumber = (value, fallback) => {

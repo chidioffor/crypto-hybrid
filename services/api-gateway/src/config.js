@@ -1,3 +1,4 @@
+require('dotenv').config();
 const parseNumber = (value, fallback) => {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : fallback;
